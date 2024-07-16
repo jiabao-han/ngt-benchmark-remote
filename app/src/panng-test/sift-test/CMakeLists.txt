@@ -1,5 +1,4 @@
-add_executable(sift-panng-test "sift-panng-test.cpp"
-        sift-panng-test.cpp)
+add_executable(sift-panng-test "sift-panng-test.cpp")
 
 
 find_package(OpenMP)

@@ -9,11 +9,11 @@
 
 #include "config.h"
 
-#include <NGT/Capi.h>
 #include <NGT/Index.h>
+#include <NGT/NGTQ/Capi.h>
 #include <cfloat>
 
-//#include <IOKit/pwr_mgt/IOPMLib.h>
+// #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <unordered_set>
 
 const size_t K = 10; // Number of nearest neighbors to retrieve
@@ -67,13 +67,6 @@ void buildIndex(const std::vector<std::vector<float>>& data, const char* index_n
         throw std::runtime_error("Error creating property");
     }
 
-    if (!ngt_set_property_distance_type_cosine(prop, err)) {
-        std::cerr << "Error setting property distance type Cosine: " << ngt_get_error_string(err) << std::endl;
-        ngt_destroy_property(prop);
-        ngt_destroy_error_object(err);
-        throw std::runtime_error("Error setting property distance type Cosine");
-    }
-
     if (!ngt_set_property_dimension(prop, data[0].size(), err)) {
         std::cerr << "Error setting property dimension: " << ngt_get_error_string(err) << std::endl;
         ngt_destroy_property(prop);
@@ -81,18 +74,18 @@ void buildIndex(const std::vector<std::vector<float>>& data, const char* index_n
         throw std::runtime_error("Error setting property dimension");
     }
 
-    if (!ngt_set_property_edge_size_for_creation(prop, 20, err)) {
-        std::cerr << "Error setting property edge size: " << ngt_get_error_string(err) << std::endl;
+    if (!ngt_set_property_edge_size_for_creation(prop, 100, err)) {
+        std::cerr << "Error setting property edge size for creation: " << ngt_get_error_string(err) << std::endl;
         ngt_destroy_property(prop);
         ngt_destroy_error_object(err);
-        throw std::runtime_error("Error setting property edge size");
+        throw std::runtime_error("Error setting property edge size for creation");
     }
 
-    if (!ngt_set_property_edge_size_for_search(prop, 60, err)) {
-        std::cerr << "Error setting property edge size for search: " << ngt_get_error_string(err) << std::endl;
+    if (!ngt_set_property_distance_type_cosine(prop, err)) {
+        std::cerr << "Error setting property distance type: " << ngt_get_error_string(err) << std::endl;
         ngt_destroy_property(prop);
         ngt_destroy_error_object(err);
-        throw std::runtime_error("Error setting property edge size for search");
+        throw std::runtime_error("Error setting property distance type");
     }
 
     // Create the index
@@ -126,7 +119,7 @@ void buildIndex(const std::vector<std::vector<float>>& data, const char* index_n
 
     // Build the index
     std::cout << "Building the index..." << std::endl;
-    if (!ngt_create_index(index, 20, err)) {
+    if (!ngt_create_index(index, 16, err)) {
         std::cerr << "Error creating index: " << ngt_get_error_string(err) << std::endl;
         ngt_close_index(index);
         ngt_destroy_property(prop);
@@ -146,34 +139,35 @@ void buildIndex(const std::vector<std::vector<float>>& data, const char* index_n
     std::cerr << "Closing the index..." << std::endl;
     ngt_close_index(index);
 
+    // Quantize the index
+    std::cout << "Quantizing the index..." << std::endl;
+    NGTQGQuantizationParameters qparams;
+    ngtqg_initialize_quantization_parameters(&qparams);
+    qparams.max_number_of_edges = 96;
+
+    if (!ngtqg_quantize(index_name, qparams, err)) {
+        std::cerr << "Error quantizing index: " << ngt_get_error_string(err) << std::endl;
+        ngt_close_index(index);
+        ngt_destroy_property(prop);
+        ngt_destroy_error_object(err);
+        throw std::runtime_error("Error quantizing index");
+    }
+
+    std::cout << "Quantize complete..." << std::endl;
+
+    std::cerr << "Closing the index..." << std::endl;
+    ngt_close_index(index);
+
     ngt_destroy_property(prop);
     ngt_destroy_error_object(err);
 }
 
-void pruneIndex(const char* index_path, int pathadj_size)
+NGTQGIndex loadIndex(const char* index_name)
 {
-    std::cout << "Pruning index with pathadj_size: " << pathadj_size << "..." << std::endl;
-
-    // Construct the command
-    std::string command = "ngt prune -s " + std::to_string(pathadj_size) + " " + index_path;
-
-    // Execute the command
-    int result = system(command.c_str());
-
-    if (result != 0) {
-        throw std::runtime_error("Error pruning index. Command failed: " + command);
-    }
-
-    std::cout << "Index pruning completed." << std::endl;
-}
-
-NGTIndex loadIndex(const char* index_name)
-{
-    std::cerr << "Opening the index..." << std::endl;
+    std::cerr << "Opening the quantized index..." << std::endl;
     NGTError err = ngt_create_error_object();
 
-    NGTIndex index = ngt_open_index(index_name, err);
-
+    NGTQGIndex index = ngtqg_open_index(index_name, err);
     if (index == NULL) {
         throw std::runtime_error("Error loading index");
     }
@@ -185,9 +179,10 @@ NGTIndex loadIndex(const char* index_name)
 
 std::pair<double, std::vector<std::vector<int>>>
 benchmarkSearch(
-    NGTIndex index,
+    NGTQGIndex index,
     const std::vector<std::vector<float>>& queries,
-    float epsilon)
+    float epsilon,
+    float result_expansion)
 {
     std::cout << "Starting benchmark search with " << queries.size() << " queries." << std::endl;
 
@@ -202,15 +197,14 @@ benchmarkSearch(
     for (size_t i = 0; i < queries.size(); ++i) {
         const auto& query = queries[i];
 
-        NGTQueryParameters panng_query_params;
-        panng_query_params.size = 10;
-        panng_query_params.epsilon = epsilon - 1;
-        panng_query_params.radius = FLT_MAX;
-        panng_query_params.edge_size = 60;
+        NGTQGQuery qg_query;
+        ngtqg_initialize_query(&qg_query);
 
-        NGTQueryFloat panng_query_float;
-        panng_query_float.query = const_cast<float*>(query.data());
-        panng_query_float.params = panng_query_params;
+        qg_query.query = const_cast<float*>(query.data());
+        qg_query.size = 10;
+        qg_query.epsilon = epsilon - 1;
+        qg_query.result_expansion = result_expansion;
+        qg_query.radius = FLT_MAX;
 
         NGTObjectDistances results = ngt_create_empty_results(err);
         if (results == NULL) {
@@ -218,12 +212,7 @@ benchmarkSearch(
             throw std::runtime_error("Error creating empty results object for query");
         }
 
-        bool search_success = ngt_search_index_with_query_float(
-            index,
-            panng_query_float,
-            results,
-            err);
-
+        bool search_success = ngtqg_search_index(index, qg_query, results, err);
         if (!search_success) {
             std::string error_msg = ngt_get_error_string(err);
             std::cerr << "Search failed: " << error_msg << std::endl;
@@ -288,14 +277,14 @@ std::vector<std::pair<double, double>> kFoldParameterSweep(
     const std::vector<std::vector<float>>& data,
     const std::vector<std::vector<float>>& queries,
     const std::vector<std::vector<int>>& ground_truth,
-    const std::vector<double>& query_args,
+    const std::vector<std::pair<double, double>>& query_args,
     size_t num_folds)
 {
     std::vector<std::pair<double, double>> overall_results;
 
     size_t fold_size = queries.size() / num_folds;
 
-    NGTIndex index = NULL;
+    NGTQGIndex index = NULL;
     try {
         if (indexExists(index_path)) {
             std::cout << "Attempting to load existing index from " << index_path << std::endl;
@@ -304,12 +293,6 @@ std::vector<std::pair<double, double>> kFoldParameterSweep(
             std::cout << "Creating new index at " << index_path << std::endl;
             try {
                 buildIndex(data, index_path.c_str());
-                try {
-                    pruneIndex(index_path.c_str(), 40); // Set pathadj_size to 40
-                } catch (const std::exception& e) {
-                    std::cerr << "Error during index creation or pruning: " << e.what() << std::endl;
-                    throw std::runtime_error("Failed to build or prune index.");
-                }
                 std::cout << "Attempting to load existing index from " << index_path << std::endl;
                 index = loadIndex(index_path.c_str());
             } catch (...) {
@@ -317,7 +300,7 @@ std::vector<std::pair<double, double>> kFoldParameterSweep(
             }
         }
 
-        for (const auto& epsilon : query_args) {
+        for (const auto& [result_expansion, epsilon] : query_args) {
             std::vector<size_t> indices(queries.size());
             std::iota(indices.begin(), indices.end(), 0);
             std::random_device rd;
@@ -336,7 +319,7 @@ std::vector<std::pair<double, double>> kFoldParameterSweep(
                     test_ground_truth.push_back(ground_truth[indices[i]]);
                 }
 
-                auto [qps, search_results] = benchmarkSearch(index, test_queries, epsilon);
+                auto [qps, search_results] = benchmarkSearch(index, test_queries, epsilon, result_expansion);
                 double recall = calculateRecall(test_ground_truth, search_results, K);
 
                 fold_recalls.push_back(recall);
@@ -348,8 +331,9 @@ std::vector<std::pair<double, double>> kFoldParameterSweep(
 
             overall_results.push_back({ avg_recall, avg_qps });
 
-            std::cout << "PANNG Params: "
-                      << "epsilon=" << epsilon
+            std::cout << "QG Params: "
+                      << "result_expansion=" << result_expansion
+                      << ", epsilon=" << epsilon
                       << " | Avg Recall: " << avg_recall << ", Avg QPS: " << avg_qps << std::endl;
         }
     } catch (const std::exception& e) {
@@ -358,7 +342,7 @@ std::vector<std::pair<double, double>> kFoldParameterSweep(
     }
 
     if (index != NULL) {
-        ngt_close_index(index);
+        ngtqg_close_index(index);
     }
 
     return overall_results;
@@ -383,8 +367,8 @@ int main()
         std::string index_data_file = std::string(data_dir) + "glove-200-angular/glove-200-angular_base.fvecs";
         std::string query_data_file = std::string(data_dir) + "glove-200-angular/glove-200-angular_query.fvecs";
         std::string ground_truth_file = std::string(data_dir) + "glove-200-angular/glove-200-angular_groundtruth.ivecs";
-        std::string index_path = std::string(index_dir) + "panng-test/glove-200-angular-test/";
-        std::string result_file_path = std::string(result_dir) + "panng-test/glove-200-angular/glove-200-angular_recall_qps_result.csv";
+        std::string index_path = std::string(index_dir) + "qg-test/glove-200-angular-test/";
+        std::string result_file_path = std::string(result_dir) + "qg-test/glove-200-angular/glove-200-angular_recall_qps_result.csv";
 
         std::cout << "Reading index data file: " << index_data_file << std::endl;
         std::vector<std::vector<float>> index_data = readFvecs(index_data_file);
@@ -415,19 +399,26 @@ int main()
             return 1;
         }
 
-        std::vector<double> query_args = {
-            0.6, 0.8, 0.9, 1.0, 1.02, 1.05, 1.1, 1.2
+        std::vector<std::pair<double, double>> query_args = {
+            { 0.0, 0.9 }, { 0.0, 0.95 }, { 0.0, 0.98 }, { 0.0, 1.0 },
+            { 1.2, 0.9 }, { 1.5, 0.9 }, { 2.0, 0.9 }, { 3.0, 0.9 },
+            { 1.2, 0.95 }, { 1.5, 0.95 }, { 2.0, 0.95 }, { 3.0, 0.95 },
+            { 1.2, 0.98 }, { 1.5, 0.98 }, { 2.0, 0.98 }, { 3.0, 0.98 },
+            { 1.2, 1.0 }, { 1.5, 1.0 }, { 2.0, 1.0 }, { 3.0, 1.0 },
+            { 5.0, 1.0 }, { 10.0, 1.0 }, { 20.0, 1.0 },
+            { 1.2, 1.02 }, { 1.5, 1.02 }, { 2.0, 1.02 }, { 3.0, 1.02 },
+            { 2.0, 1.04 }, { 3.0, 1.04 }, { 5.0, 1.04 }, { 8.0, 1.04 }
         };
 
-        std::cout << "Performing k-fold cross-validation with parameter sweep for PANNG..." << std::endl;
-        auto panng_results = kFoldParameterSweep(index_path, index_data, all_query_data, ground_truth, query_args, NUM_FOLDS);
+        std::cout << "Performing k-fold cross-validation with parameter sweep for QG..." << std::endl;
+        auto qg_results = kFoldParameterSweep(index_path, index_data, all_query_data, ground_truth, query_args, NUM_FOLDS);
 
-        std::ofstream panng_file(result_file_path);
-        panng_file << "Recall,QPS\n";
-        for (const auto& [recall, qps] : panng_results) {
-            panng_file << recall << "," << qps << "\n";
+        std::ofstream qg_file(result_file_path);
+        qg_file << "Recall,QPS\n";
+        for (const auto& [recall, qps] : qg_results) {
+            qg_file << recall << "," << qps << "\n";
         }
-        panng_file.close();
+        qg_file.close();
 
         std::cout << "K-fold cross-validation with parameter sweep complete. Results written to " << result_file_path << std::endl;
 

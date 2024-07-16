@@ -1,16 +1,16 @@
-add_executable(glove-200-angular-panng-test "glove-200-angular-panng-test.cpp")
+add_executable(nytimes-256-angular-panng-test "nytimes-256-angular-panng-test.cpp")
 
 
 find_package(OpenMP)
 # Link libraries
 if(OpenMP_CXX_FOUND)
-    target_link_libraries(glove-200-angular-panng-test
+    target_link_libraries(nytimes-256-angular-panng-test
             PUBLIC
             OpenMP::OpenMP_CXX
             /usr/local/lib/libngt.a
     )
 else()
-    target_link_libraries(glove-200-angular-panng-test
+    target_link_libraries(nytimes-256-angular-panng-test
             PUBLIC
             /usr/local/lib/libngt.a
     )

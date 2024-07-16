@@ -380,11 +380,11 @@ int main()
         //            return 1;
         //        }
 
-        std::string index_data_file = std::string(data_dir) + "glove-200-angular/glove-200-angular_base.fvecs";
-        std::string query_data_file = std::string(data_dir) + "glove-200-angular/glove-200-angular_query.fvecs";
-        std::string ground_truth_file = std::string(data_dir) + "glove-200-angular/glove-200-angular_groundtruth.ivecs";
-        std::string index_path = std::string(index_dir) + "panng-test/glove-200-angular-test/";
-        std::string result_file_path = std::string(result_dir) + "panng-test/glove-200-angular/glove-200-angular_recall_qps_result.csv";
+        std::string index_data_file = std::string(data_dir) + "nytimes-256-angular/nytimes-256-angular_base.fvecs";
+        std::string query_data_file = std::string(data_dir) + "nytimes-256-angular/nytimes-256-angular_query.fvecs";
+        std::string ground_truth_file = std::string(data_dir) + "nytimes-256-angular/nytimes-256-angular_groundtruth.ivecs";
+        std::string index_path = std::string(index_dir) + "panng-test/nytimes-256-angular-test/";
+        std::string result_file_path = std::string(result_dir) + "panng-test/nytimes-256-angular/nytimes-256-angular_recall_qps_result.csv";
 
         std::cout << "Reading index data file: " << index_data_file << std::endl;
         std::vector<std::vector<float>> index_data = readFvecs(index_data_file);

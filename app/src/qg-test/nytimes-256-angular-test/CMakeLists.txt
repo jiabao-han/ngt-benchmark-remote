@@ -1,16 +1,20 @@
-add_executable(glove-200-angular-panng-test "glove-200-angular-panng-test.cpp")
+add_executable(nytimes-256-angular-qg-test "nytimes-256-angular-qg-test.cpp")
 
 
 find_package(OpenMP)
+find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
 # Link libraries
 if(OpenMP_CXX_FOUND)
-    target_link_libraries(glove-200-angular-panng-test
+    target_link_libraries(nytimes-256-angular-qg-test
             PUBLIC
             OpenMP::OpenMP_CXX
             /usr/local/lib/libngt.a
+            ${BLAS_LIBRARIES}
+            ${LAPACK_LIBRARIES}
     )
 else()
-    target_link_libraries(glove-200-angular-panng-test
+    target_link_libraries(nytimes-256-angular-qg-test
             PUBLIC
             /usr/local/lib/libngt.a
     )
