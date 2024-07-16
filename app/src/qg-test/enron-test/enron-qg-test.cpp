@@ -356,10 +356,10 @@ int main()
             { 2.0, 1.04 }, { 3.0, 1.04 }, { 5.0, 1.04 }, { 8.0, 1.04 }
         };
 
-//        for (auto& arg : query_args) {
-//            arg.first *= 100.0;
-//            arg.second *= 100.0;
-//        }
+        for (auto& arg : query_args) {
+            arg.first *= 100.0;
+            arg.second *= 100.0;
+        }
 
         std::cout << "Performing k-fold cross-validation with parameter sweep for QG..." << std::endl;
         auto qg_results = kFoldParameterSweep(index_path, index_data, all_query_data, ground_truth, query_args, NUM_FOLDS);
